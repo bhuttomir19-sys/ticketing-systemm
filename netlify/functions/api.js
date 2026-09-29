@@ -41,17 +41,17 @@ const core = async (req, res) => {
         const name = String(body.name || '').trim().slice(0, 60), dept = String(body.dept || '').trim().slice(0, 60);
         const title = String(body.title || '').trim().slice(0, 120), desc = String(body.desc || '').trim().slice(0, 4000);
         if (!name || !dept || !title || !desc) return send(400, { error: 'Name, department, title and description are required.' });
-        const id = 'T-' + (await redis.incr('ticketseq')).toString().padStart(4, '0');
+        const id = 'T-' + String(await redis.incr('ticketseq')).padStart(4, '0');
         const t = { id, title, desc, priority: 'Medium',
-          category: 'General', status: 'open', code: crypto.randomBytes(4).toString('hex').toUpperCase(), byName: name, dept, assignee: '', notes: [],
+          category: 'General', status: 'open', byName: name, dept, assignee: '', notes: [],
           history: [{ at: now(), by: name, action: 'Ticket created' }], createdAt: now() };
         await redis.set('ticket:' + id, t); await redis.lpush('tickets', id); await log(name, id, 'Created: ' + title);
-        return send(200, { id, code: t.code });
+        return send(200, { id });
       }
       if (['track', 'comment', 'status'].includes(b)) {
         if (!(await limit(req, 'track', 60, 900))) return send(429, { error: 'Too many requests.' });
         const t = await redis.get('ticket:' + String(body.id || '').trim().toUpperCase());
-        if (!t || t.code !== String(body.code || '').trim().toUpperCase()) return send(404, { error: 'No ticket found for that ID and access code.' });
+        if (!t) return send(404, { error: 'No ticket found with that ID.' });
         let act;
         if (b === 'comment') {
           const text = String(body.text || '').trim().slice(0, 2000); if (!text) return send(400, { error: 'Write something first.' });
@@ -88,6 +88,10 @@ const core = async (req, res) => {
       }
       const t = await redis.get('ticket:' + b);
       if (!t) return send(404, { error: 'Ticket not found.' });
+      if (body.op === 'delete') {
+        await redis.del('ticket:' + b); await redis.lrem('tickets', 0, b); await log('Admin', b, 'Ticket deleted: ' + t.title);
+        return send(200, { ok: true });
+      }
       let act;
       if (body.op === 'comment') {
         const text = String(body.text || '').trim().slice(0, 2000); if (!text) return send(400, { error: 'Write something first.' });
@@ -102,7 +106,16 @@ const core = async (req, res) => {
       await redis.set('ticket:' + b, t); await log('Admin', b, act);
       return send(200, t);
     }
-    if (a === 'logs') return send(200, await redis.lrange('logs', 0, 499));
+    if (a === 'logs') {
+      if (b === 'delete') {
+        const from = Number(body.from) || 0, to = Number(body.to) || Infinity;
+        const all = await redis.lrange('logs', 0, -1), keep = all.filter((l) => !(l.at >= from && l.at <= to));
+        await redis.del('logs'); if (keep.length) await redis.rpush('logs', ...keep);
+        await log('Admin', '-', `Deleted ${all.length - keep.length} log entries`);
+        return send(200, { deleted: all.length - keep.length });
+      }
+      return send(200, await redis.lrange('logs', 0, 1999));
+    }
     if (a === 'team') {
       if (M === 'GET') return send(200, await redis.smembers('team'));
       const name = String(body.name || '').trim().slice(0, 40); if (!name) return send(400, { error: 'Enter a name.' });
