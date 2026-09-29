@@ -38,12 +38,12 @@ const core = async (req, res) => {
     if (a === 'public') {
       if (b === 'submit') {
         if (!(await limit(req, 'submit', 10, 3600))) return send(429, { error: 'Too many tickets. Try again later.' });
-        const name = String(body.name || '').trim().slice(0, 60);
+        const name = String(body.name || '').trim().slice(0, 60), dept = String(body.dept || '').trim().slice(0, 60);
         const title = String(body.title || '').trim().slice(0, 120), desc = String(body.desc || '').trim().slice(0, 4000);
-        if (!name || !title || !desc) return send(400, { error: 'Name, title and description are required.' });
+        if (!name || !dept || !title || !desc) return send(400, { error: 'Name, department, title and description are required.' });
         const id = 'T-' + (await redis.incr('ticketseq')).toString().padStart(4, '0');
         const t = { id, title, desc, priority: 'Medium',
-          category: 'General', status: 'open', code: crypto.randomBytes(4).toString('hex').toUpperCase(), byName: name, assignee: '', notes: [],
+          category: 'General', status: 'open', code: crypto.randomBytes(4).toString('hex').toUpperCase(), byName: name, dept, assignee: '', notes: [],
           history: [{ at: now(), by: name, action: 'Ticket created' }], createdAt: now() };
         await redis.set('ticket:' + id, t); await redis.lpush('tickets', id); await log(name, id, 'Created: ' + title);
         return send(200, { id, code: t.code });
