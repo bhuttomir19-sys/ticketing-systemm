@@ -1,5 +1,5 @@
 # Helpdesk (Netlify)
-- **Requesters**: no login. Public form → ticket ID; track with ID + email.
+- **Requesters**: no login. Public form → ticket ID; track with ID + access code.
 - **Team**: no login. Names added by admin, tickets assigned to them.
 - **Admin**: the only login. Manages everything, sees activity log / CSV.
 

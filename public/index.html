@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 :root{--bg:#faf8f5;--card:#fff;--ink:#1d2b2a;--mu:#6f7a78;--bd:#e6e1d9;--ac:#d9603b;--acd:#b94a28;--ok:#2f7d5b;--wa:#b7791f;--er:#c0392b}
-@media(prefers-color-scheme:dark){:root{--bg:#141a19;--card:#1c2423;--ink:#ece8e1;--mu:#93a09d;--bd:#2c3735;--ac:#f07a55;--acd:#ff946f}}
+@media(prefers-color-scheme:dark){:root{--bg:#141a19;--card:#1c2423;--ink:#ece8e1;--mu:#93a09d;--bd:#2c3735;--ac:#f07a55;--acd:#ff946f}.btn{color:#1a0f0b}.btn.g{color:var(--ink)}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
 h1,h2,h3{font-family:Georgia,"Iowan Old Style",serif;margin:0}
 button,input,select,textarea{font:inherit;color:inherit}
@@ -52,20 +52,18 @@ function home(){
   <button class="btn g" onclick="loginUI()">Admin login</button></header><main style="max-width:560px" id="m"></main>`;
   pub==='submit'?submitUI():trackUI()}
 function submitUI(){
-  $('#m').innerHTML=`<h2>How can we help?</h2><p class="mu">No account needed. You'll get a ticket ID to follow progress.</p><div class="card">
-  ${F('Your name','sn','maxlength=60')}${F('Email','se','type=email')}${F('Title','st','maxlength=120 placeholder="Short summary"')}
-  <label>Description</label><textarea id="sd" rows="5" placeholder="What happened? What did you expect?"></textarea>
-  <div class="row" style="align-items:flex-start"><div style="flex:1"><label>Priority</label><select id="sp" style="width:100%;margin:4px 0 12px">${opts(['Low','Medium','High','Urgent'],'Medium')}</select></div>
-  <div style="flex:1"><label>Category</label><select id="sc" style="width:100%;margin:4px 0 12px">${opts(['General','Bug','Access','Request'])}</select></div></div>
+  $('#m').innerHTML=`<h2>How can we help?</h2><p class="mu">No account needed. You'll get a ticket ID and access code to follow progress.</p><div class="card">
+  ${F('Your name *','sn','maxlength=60')}${F('Title *','st','maxlength=120 placeholder="Short summary"')}
+  <label>Description *</label><textarea id="sd" rows="5" placeholder="What happened? What did you expect?"></textarea>
   <button class="btn" style="width:100%" id="sb">Submit ticket</button></div>`;
-  $('#sb').onclick=async()=>{try{const r=await api('public/submit',{name:$('#sn').value,email:$('#se').value,title:$('#st').value,desc:$('#sd').value,priority:$('#sp').value,category:$('#sc').value});
-    $('#m').innerHTML=`<div class="card empty"><div style="font-size:40px">✅</div><h2 style="color:var(--ink)">Ticket submitted</h2><p>Your ticket ID is</p><h1 style="color:var(--ac);font-size:40px">${r.id}</h1><p>Save it — use it with your email to track progress.</p><button class="btn" onclick="pub='submit';home()">Raise another</button></div>`}catch(e){toast(e.message)}}}
+  $('#sb').onclick=async()=>{try{const r=await api('public/submit',{name:$('#sn').value,title:$('#st').value,desc:$('#sd').value});
+    $('#m').innerHTML=`<div class="card empty"><div style="font-size:40px">✅</div><h2 style="color:var(--ink)">Ticket submitted</h2><p>Your ticket ID</p><h1 style="color:var(--ac);font-size:40px">${r.id}</h1><p>Access code</p><h1 style="font-size:32px;letter-spacing:3px">${r.code}</h1><p>Save both — you need them to track progress.</p><button class="btn" onclick="pub='submit';home()">Raise another</button></div>`}catch(e){toast(e.message)}}}
 function trackUI(){
-  $('#m').innerHTML=`<h2>Track your ticket</h2><div class="card">${F('Ticket ID','ti','placeholder="T-0001"')}${F('Email used','te','type=email')}<button class="btn" id="tb">Look up</button></div><div id="td"></div>`;
-  $('#tb').onclick=async()=>{tkAuth={id:$('#ti').value,email:$('#te').value};await lookup('track')};if(tk&&tkAuth){$('#ti').value=tkAuth.id;$('#te').value=tkAuth.email;drawTk()}}
+  $('#m').innerHTML=`<h2>Track your ticket</h2><div class="card">${F('Ticket ID','ti','placeholder="T-0001"')}${F('Access code','te','placeholder="e.g. 9F3A1C2B"')}<button class="btn" id="tb">Look up</button></div><div id="td"></div>`;
+  $('#tb').onclick=async()=>{tkAuth={id:$('#ti').value,code:$('#te').value};await lookup('track')};if(tk&&tkAuth){$('#ti').value=tkAuth.id;$('#te').value=tkAuth.code;drawTk()}}
 async function lookup(op,extra={}){try{tk=await api('public/'+op,{...tkAuth,...extra});drawTk()}catch(e){toast(e.message)}}
 function drawTk(){const t=tk;$('#td').innerHTML=`<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3>${t.id}</h3>${chip(t.status)}</div><h2 style="margin:6px 0">${esc(t.title)}</h2>
-  <p class="mu">${t.priority} · ${esc(t.category)} · ${fmt(t.createdAt)} · ${t.assignee?'handled by '+esc(t.assignee):'waiting to be assigned'}</p><p style="white-space:pre-wrap">${esc(t.desc)}</p>
+  <p class="mu">${fmt(t.createdAt)} · ${t.assignee?'handled by '+esc(t.assignee):'waiting to be assigned'}</p><p style="white-space:pre-wrap">${esc(t.desc)}</p>
   ${t.status==='resolved'?`<div class="row" style="margin:10px 0"><button class="btn" onclick="lookup('status',{status:'closed'})">Confirm &amp; close</button><button class="btn g" onclick="lookup('status',{status:'open'})">Not fixed — reopen</button></div>`:''}
   <h3 style="font-size:16px;margin-top:14px">Conversation</h3>${t.notes.map(n=>`<div class="note"><b>${esc(n.by)}</b><span class="mu"> · ${fmt(n.at)}</span><div style="white-space:pre-wrap">${esc(n.text)}</div></div>`).join('')||'<p class="mu">No replies yet.</p>'}
   ${t.status!=='closed'?`<textarea id="tc" rows="3" placeholder="Add a comment…"></textarea><button class="btn" onclick="lookup('comment',{text:$('#tc').value})">Post</button>`:''}</div>`}
@@ -86,13 +84,13 @@ function list(){
   const L=T.filter(t=>(filt==='all'||t.status===filt)&&(!q||(t.title+t.id+t.byName+t.assignee).toLowerCase().includes(q)));
   $('#m').innerHTML=`<div class="bar"><h3 style="flex:1">Ticket queue</h3><input id="q" placeholder="Search…" value="${esc(q)}"></div>
   <div class="bar">${['all','open','progress','resolved','closed'].map(k=>`<button class="f ${filt===k?'on':''}" onclick="filt='${k}';list()">${k==='all'?'All '+T.length:ST[k]+' '+n(k)}</button>`).join('')}</div>
-  ${L.length?L.map(t=>`<div class="card t" onclick="show('${t.id}')"><span class="dot bg-${t.status}"></span><div class="m"><b>${esc(t.title)}</b><span class="mu">${t.id} · ${t.priority} · ${esc(t.category)} · ${esc(t.byName)}${t.assignee?' · → '+esc(t.assignee):''}</span></div>${chip(t.status)}</div>`).join(''):`<div class="empty"><div style="font-size:40px">📭</div>${T.length?'No tickets match.':'No tickets yet. Share your site link so people can raise them.'}</div>`}`;
+  ${L.length?L.map(t=>`<div class="card t" onclick="show('${t.id}')"><span class="dot bg-${t.status}"></span><div class="m"><b>${esc(t.title)}</b><span class="mu">${t.id} · ${esc(t.byName)}${t.assignee?' · → '+esc(t.assignee):''}</span></div>${chip(t.status)}</div>`).join(''):`<div class="empty"><div style="font-size:40px">📭</div>${T.length?'No tickets match.':'No tickets yet. Share your site link so people can raise them.'}</div>`}`;
   $('#q').oninput=e=>{q=e.target.value.toLowerCase();const p=e.target.selectionStart;list();$('#q').focus();$('#q').setSelectionRange(p,p)}}
 function modal(h,c){const o=document.createElement('div');o.className='ov'+(c?' c':'');o.innerHTML=`<div class="pn ${c?'c':''}">${h}</div>`;o.onclick=e=>{if(e.target===o)o.remove()};document.body.appendChild(o);return o}
 function show(id){
   const t=T.find(x=>x.id===id);document.querySelectorAll('.ov').forEach(x=>x.remove());
   const o=modal(`<div class="row" style="justify-content:space-between"><h3>${t.id}</h3>${chip(t.status)}</div><h2 style="margin:6px 0">${esc(t.title)}</h2>
-  <p class="mu">${t.priority} · ${esc(t.category)} · ${esc(t.byName)} (${esc(t.by)}) · ${fmt(t.createdAt)}</p><p style="white-space:pre-wrap">${esc(t.desc)}</p>
+  <p class="mu">${t.priority} · ${esc(t.category)} · ${esc(t.byName)} · ${fmt(t.createdAt)}</p><p style="white-space:pre-wrap">${esc(t.desc)}</p>
   <div class="row" style="margin:10px 0"><select onchange="act('${t.id}',{op:'assign',name:this.value})"><option value="">Unassigned</option>${TEAM.map(m=>`<option ${m===t.assignee?'selected':''}>${esc(m)}</option>`).join('')}</select>
   <select onchange="act('${t.id}',{op:'status',status:this.value})">${Object.entries(ST).map(([k,v])=>`<option value="${k}" ${k===t.status?'selected':''}>${v}</option>`).join('')}</select></div>
   ${!TEAM.length?'<p class="mu">Add team members in the Team tab to assign tickets.</p>':''}

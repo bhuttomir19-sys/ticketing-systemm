@@ -38,20 +38,20 @@ const core = async (req, res) => {
     if (a === 'public') {
       if (b === 'submit') {
         if (!(await limit(req, 'submit', 10, 3600))) return send(429, { error: 'Too many tickets. Try again later.' });
-        const name = String(body.name || '').trim().slice(0, 60), email = norm(body.email);
+        const name = String(body.name || '').trim().slice(0, 60);
         const title = String(body.title || '').trim().slice(0, 120), desc = String(body.desc || '').trim().slice(0, 4000);
-        if (!name || !email.includes('@') || !title || !desc) return send(400, { error: 'Name, valid email, title and description are required.' });
+        if (!name || !title || !desc) return send(400, { error: 'Name, title and description are required.' });
         const id = 'T-' + (await redis.incr('ticketseq')).toString().padStart(4, '0');
-        const t = { id, title, desc, priority: ['Low', 'Medium', 'High', 'Urgent'].includes(body.priority) ? body.priority : 'Medium',
-          category: String(body.category || 'General').slice(0, 30), status: 'open', by: email, byName: name, assignee: '', notes: [],
+        const t = { id, title, desc, priority: 'Medium',
+          category: 'General', status: 'open', code: crypto.randomBytes(4).toString('hex').toUpperCase(), byName: name, assignee: '', notes: [],
           history: [{ at: now(), by: name, action: 'Ticket created' }], createdAt: now() };
         await redis.set('ticket:' + id, t); await redis.lpush('tickets', id); await log(name, id, 'Created: ' + title);
-        return send(200, { id });
+        return send(200, { id, code: t.code });
       }
       if (['track', 'comment', 'status'].includes(b)) {
         if (!(await limit(req, 'track', 60, 900))) return send(429, { error: 'Too many requests.' });
         const t = await redis.get('ticket:' + String(body.id || '').trim().toUpperCase());
-        if (!t || t.by !== norm(body.email)) return send(404, { error: 'No ticket found for that ID and email.' });
+        if (!t || t.code !== String(body.code || '').trim().toUpperCase()) return send(404, { error: 'No ticket found for that ID and access code.' });
         let act;
         if (b === 'comment') {
           const text = String(body.text || '').trim().slice(0, 2000); if (!text) return send(400, { error: 'Write something first.' });
