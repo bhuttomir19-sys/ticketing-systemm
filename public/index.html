@@ -37,87 +37,112 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:8px;bord
 <script>
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ST={open:'Open',progress:'In progress',resolved:'Resolved',closed:'Closed'};
-let T=[],TEAM=[],filt='all',q='',view='tickets',pub='submit',tk=null,tkAuth=null;
+let ME=null,T=[],TEAMS=[],USERS=[],filt='all',q='',view='tickets',pub='submit',tk=null,tkAuth=null,more=false;
 const fmt=t=>new Date(t).toLocaleString([], {dateStyle:'medium',timeStyle:'short'});
+const isAdmin=()=>ME&&ME.role==='admin',tname=id=>(TEAMS.find(t=>t.id===id)||{name:'—'}).name;
 function toast(m){const e=$('#toast');e.textContent=m;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),2500)}
 async function api(p,body){const r=await fetch('/api/'+p,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
   const d=await r.json().catch(()=>({}));if(!r.ok)throw Object.assign(new Error(d.error||'Something went wrong'),{status:r.status});return d}
 const chip=s=>`<span class="chip ${s}">${ST[s]}</span>`;
 const F=(l,i,x='')=>`<label>${l}</label><input id="${i}" ${x}>`;
-const opts=(a,d)=>a.map(v=>`<option ${v===d?'selected':''}>${v}</option>`).join('');
+const sel=(id,items,cur,ph)=>`<select id="${id}" style="width:100%;margin:4px 0 12px">${ph?`<option value="">${ph}</option>`:''}${items.map(([v,n])=>`<option value="${esc(v)}" ${v===cur?'selected':''}>${esc(n)}</option>`).join('')}</select>`;
+const head=t=>`<div class="row" style="justify-content:space-between;align-items:flex-start"><h2 style="margin:0;flex:1;min-width:0"><span class="tid">${t.id}</span> · ${esc(t.title)}</h2>${chip(t.status)}</div>`;
 
-/* ---------- Public (no login) ---------- */
-function home(){
+/* ---------- Public ---------- */
+async function home(){
+  try{TEAMS=await api('public/teams')}catch(e){}
   $('#app').innerHTML=`<header><h2>🎫 Helpdesk</h2><nav><button class="${pub==='submit'?'on':''}" onclick="pub='submit';home()">Raise a ticket</button><button class="${pub==='track'?'on':''}" onclick="pub='track';home()">Track a ticket</button></nav>
-  <button class="btn g" onclick="loginUI()">Admin login</button></header><main style="max-width:560px" id="m"></main>`;
+  <button class="btn g" onclick="loginUI()">Staff login</button></header><main style="max-width:560px" id="m"></main>`;
   pub==='submit'?submitUI():trackUI()}
 function submitUI(){
   $('#m').innerHTML=`<h2>How can we help?</h2><p class="mu">No account needed. You'll get a ticket ID to follow progress.</p><div class="card">
-  ${F('Your name *','sn','maxlength=60')}${F('Department *','sdp','maxlength=60 placeholder="e.g. Finance, HR, Operations"')}${F('Title *','st','maxlength=120 placeholder="Short summary"')}
-  <label>Description *</label><textarea id="sd" rows="5" placeholder="What happened? What did you expect?"></textarea>
+  ${F('Your name *','sn','maxlength=60')}${F('Department *','sdp','maxlength=60 placeholder="e.g. Finance, HR, Operations"')}
+  ${TEAMS.length?'<label>Send to team *</label>'+sel('stm',TEAMS.map(t=>[t.id,t.name]),'','Choose a team…'):''}
+  ${F('Title *','st','maxlength=120 placeholder="Short summary"')}<label>Description *</label><textarea id="sd" rows="5" placeholder="What happened? What did you expect?"></textarea>
   <button class="btn" style="width:100%" id="sb">Submit ticket</button></div>`;
-  $('#sb').onclick=async()=>{try{const r=await api('public/submit',{name:$('#sn').value,dept:$('#sdp').value,title:$('#st').value,desc:$('#sd').value});
+  $('#sb').onclick=async()=>{try{const r=await api('public/submit',{name:$('#sn').value,dept:$('#sdp').value,team:$('#stm')?$('#stm').value:'',title:$('#st').value,desc:$('#sd').value});
     $('#m').innerHTML=`<div class="card empty"><div style="font-size:40px">✅</div><h2 style="color:var(--ink)">Ticket submitted</h2><p>Your ticket ID</p><h1 style="color:var(--ac);font-size:40px">${r.id}</h1><p>Save this ID — you need it to track progress.</p><button class="btn" onclick="pub='submit';home()">Raise another</button></div>`}catch(e){toast(e.message)}}}
 function trackUI(){
   $('#m').innerHTML=`<h2>Track your ticket</h2><div class="card">${F('Ticket ID','ti','placeholder="e.g. T-0001"')}<button class="btn" id="tb">Look up</button></div><div id="td"></div>`;
   $('#tb').onclick=async()=>{tkAuth={id:$('#ti').value};await lookup('track')};if(tk&&tkAuth){$('#ti').value=tkAuth.id;drawTk()}}
 async function lookup(op,extra={}){try{tk=await api('public/'+op,{...tkAuth,...extra});drawTk()}catch(e){toast(e.message)}}
-function drawTk(){const t=tk;$('#td').innerHTML=`<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h2 style="margin:0;flex:1;min-width:0"><span class="tid">${t.id}</span> · ${esc(t.title)}</h2>${chip(t.status)}</div>
+function drawTk(){const t=tk;$('#td').innerHTML=`<div class="card" style="margin-top:14px">${head(t)}
   <p class="mu">${fmt(t.createdAt)} · ${t.assignee?'handled by '+esc(t.assignee):'waiting to be assigned'}</p><p style="white-space:pre-wrap">${esc(t.desc)}</p>
   ${t.status==='resolved'?`<div class="row" style="margin:10px 0"><button class="btn" onclick="lookup('status',{status:'closed'})">Confirm &amp; close</button><button class="btn g" onclick="lookup('status',{status:'open'})">Not fixed — reopen</button></div>`:''}
   <h3 style="font-size:16px;margin-top:14px">Conversation</h3>${t.notes.map(n=>`<div class="note"><b>${esc(n.by)}</b><span class="mu"> · ${fmt(n.at)}</span><div style="white-space:pre-wrap">${esc(n.text)}</div></div>`).join('')||'<p class="mu">No replies yet.</p>'}
   ${t.status!=='closed'?`<textarea id="tc" rows="3" placeholder="Add a comment…"></textarea><button class="btn" onclick="lookup('comment',{text:$('#tc').value})">Post</button>`:''}</div>`}
 
-/* ---------- Admin ---------- */
+/* ---------- Staff ---------- */
 function loginUI(){
-  $('#app').innerHTML=`<div class="auth"><h1>Admin login</h1><p class="mu">Only the admin signs in. Team members are assigned from inside.</p><div class="card"><form id="af">${F('Email','ae','type=email required')}${F('Password','ap','type=password required')}
+  $('#app').innerHTML=`<div class="auth"><h1>Staff login</h1><p class="mu">Admin and team members sign in here.</p><div class="card"><form id="af">${F('Email','ae','type=email required')}${F('Password','ap','type=password required')}
   <p id="er" style="color:var(--er);min-height:20px;margin:0 0 10px"></p><button class="btn" style="width:100%">Sign in</button></form></div><p class="mu" style="text-align:center"><a href="#" style="color:var(--ac)" onclick="event.preventDefault();home()">← Back to ticket form</a></p></div>`;
   $('#af').onsubmit=async e=>{e.preventDefault();try{await api('auth/login',{email:$('#ae').value,password:$('#ap').value});await enter()}catch(x){$('#er').textContent=x.message}}}
-async function enter(){[T,TEAM]=await Promise.all([api('tickets'),api('team')]);view='tickets';app()}
+async function enter(){ME=await api('me');[T,TEAMS,USERS]=await Promise.all([api('tickets'),api('public/teams'),api('users')]);more=T.length>=500;view='tickets';app()}
 function app(){
-  const tabs=[['tickets','Tickets'],['team','Team'],['logs','Activity log']];
-  $('#app').innerHTML=`<header><h2>🎫 Helpdesk <span class="chip" style="color:var(--ac)">Admin</span></h2><nav>${tabs.map(([k,v])=>`<button class="${k===view?'on':''}" onclick="view='${k}';app()">${v}</button>`).join('')}</nav><button class="btn g" onclick="out()">Sign out</button></header><main id="m"></main>`;
-  ({tickets:list,team:teamUI,logs})[view]()}
-async function out(){await api('auth/logout',{});home()}
+  const tabs=[['tickets','Tickets']];if(isAdmin())tabs.push(['teams','Teams & logins']);tabs.push(['logs','Activity log']);
+  $('#app').innerHTML=`<header><h2>🎫 Helpdesk</h2><nav>${tabs.map(([k,v])=>`<button class="${k===view?'on':''}" onclick="view='${k}';app()">${v}</button>`).join('')}</nav>
+  <span class="mu">${esc(ME.name)} · <b>${isAdmin()?'Admin':esc(tname(ME.team))}</b></span><button class="btn g" onclick="out()">Sign out</button></header><main id="m"></main>`;
+  ({tickets:list,teams:teamsUI,logs})[view]()}
+async function out(){await api('auth/logout',{});ME=null;home()}
 function list(){
   const n=k=>T.filter(t=>t.status===k).length;
-  const L=T.filter(t=>(filt==='all'||t.status===filt)&&(!q||(t.title+t.id+t.byName+(t.dept||'')+t.assignee).toLowerCase().includes(q)));
-  $('#m').innerHTML=`<div class="bar"><h3 style="flex:1">Ticket queue</h3><input id="q" placeholder="Search…" value="${esc(q)}"></div>
+  const L=T.filter(t=>(filt==='all'||t.status===filt)&&(!q||(t.title+t.id+t.byName+(t.dept||'')+t.assignee+tname(t.team)).toLowerCase().includes(q)));
+  $('#m').innerHTML=`<div class="bar"><h3 style="flex:1">${isAdmin()?'All tickets':esc(tname(ME.team))+' queue'}</h3><input id="q" placeholder="Search…" value="${esc(q)}"></div>
   <div class="bar">${['all','open','progress','resolved','closed'].map(k=>`<button class="f ${filt===k?'on':''}" onclick="filt='${k}';list()">${k==='all'?'All '+T.length:ST[k]+' '+n(k)}</button>`).join('')}</div>
-  ${L.length?L.map(t=>`<div class="card t" onclick="show('${t.id}')"><span class="dot bg-${t.status}"></span><div class="m"><b><span class="tid">${t.id}</span> · ${esc(t.title)}</b><span class="mu">${esc(t.byName)}${t.dept?' · '+esc(t.dept):''}${t.assignee?' · → '+esc(t.assignee):''}</span></div>${chip(t.status)}</div>`).join(''):`<div class="empty"><div style="font-size:40px">📭</div>${T.length?'No tickets match.':'No tickets yet. Share your site link so people can raise them.'}</div>`}`;
+  ${L.length?L.map(t=>`<div class="card t" onclick="show('${t.id}')"><span class="dot bg-${t.status}"></span><div class="m"><b><span class="tid">${t.id}</span> · ${esc(t.title)}</b><span class="mu">${esc(t.byName)}${t.dept?' ('+esc(t.dept)+')':''}${isAdmin()?' · '+esc(tname(t.team)):''}${t.assignee?' · → '+esc(t.assignee):''}</span></div>${chip(t.status)}</div>`).join(''):`<div class="empty"><div style="font-size:40px">📭</div>${T.length?'No tickets match.':'No tickets yet.'}</div>`}
+  ${more?'<button class="btn g" onclick="older()">Load older tickets</button>':''}`;
   $('#q').oninput=e=>{q=e.target.value.toLowerCase();const p=e.target.selectionStart;list();$('#q').focus();$('#q').setSelectionRange(p,p)}}
+async function older(){const x=await api('tickets?offset='+T.length);T=T.concat(x);more=x.length>=500;list()}
 function modal(h,c){const o=document.createElement('div');o.className='ov'+(c?' c':'');o.innerHTML=`<div class="pn ${c?'c':''}">${h}</div>`;o.onclick=e=>{if(e.target===o)o.remove()};document.body.appendChild(o);return o}
 function show(id){
   const t=T.find(x=>x.id===id);document.querySelectorAll('.ov').forEach(x=>x.remove());
-  const o=modal(`<div class="row" style="justify-content:space-between"><h2 style="margin:0;flex:1;min-width:0"><span class="tid">${t.id}</span> · ${esc(t.title)}</h2>${chip(t.status)}</div>
-  <p class="mu">${t.priority} · ${esc(t.category)} · ${esc(t.byName)}${t.dept?' · '+esc(t.dept):''} · ${fmt(t.createdAt)}</p><p style="white-space:pre-wrap">${esc(t.desc)}</p>
-  <div class="row" style="margin:10px 0"><select onchange="act('${t.id}',{op:'assign',name:this.value})"><option value="">Unassigned</option>${TEAM.map(m=>`<option ${m===t.assignee?'selected':''}>${esc(m)}</option>`).join('')}</select>
-  <select onchange="act('${t.id}',{op:'status',status:this.value})">${Object.entries(ST).map(([k,v])=>`<option value="${k}" ${k===t.status?'selected':''}>${v}</option>`).join('')}</select></div>
-  ${!TEAM.length?'<p class="mu">Add team members in the Team tab to assign tickets.</p>':''}
+  const mem=USERS.filter(u=>u.team===t.team).map(u=>[u.name,u.name]);if(isAdmin())mem.unshift(['Admin','Admin (me)']);
+  modal(`${head(t)}<p class="mu">${esc(t.byName)}${t.dept?' · '+esc(t.dept):''} · ${fmt(t.createdAt)}</p><p style="white-space:pre-wrap">${esc(t.desc)}</p>
+  <div class="row" style="margin:10px 0"><div><label>Team</label><br><select onchange="act('${t.id}',{op:'move',team:this.value})" style="margin-top:4px">${TEAMS.map(x=>`<option value="${x.id}" ${x.id===t.team?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
+  <div><label>Assigned to</label><br><select onchange="act('${t.id}',{op:'assign',name:this.value})" style="margin-top:4px"><option value="">Unassigned</option>${mem.map(([v,n])=>`<option value="${esc(v)}" ${v===t.assignee?'selected':''}>${esc(n)}</option>`).join('')}</select></div>
+  <div><label>Status</label><br><select onchange="act('${t.id}',{op:'status',status:this.value})" style="margin-top:4px">${Object.entries(ST).map(([k,v])=>`<option value="${k}" ${k===t.status?'selected':''}>${v}</option>`).join('')}</select></div></div>
   <h3 style="font-size:16px;margin-top:14px">Conversation</h3>${t.notes.map(n=>`<div class="note ${n.internal?'i':''}"><b>${esc(n.by)}</b> ${n.internal?'<span class="mu">(internal)</span>':''}<span class="mu"> · ${fmt(n.at)}</span><div style="white-space:pre-wrap">${esc(n.text)}</div></div>`).join('')||'<p class="mu">No comments yet.</p>'}
   <textarea id="cm" rows="3" placeholder="Write a reply or internal note…"></textarea><div class="row"><button class="btn" id="cs">Post</button><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="ci" style="width:auto;margin:0"> Internal note</label></div>
   <h3 style="font-size:16px;margin-top:20px">History</h3><div class="tl">${t.history.map(h=>`<div><b>${esc(h.by)}</b>: ${esc(h.action)}<br><span class="mu">${fmt(h.at)}</span></div>`).join('')}</div>
-  <div class="row" style="margin-top:10px"><button class="btn g" onclick="this.closest('.ov').remove()">Close</button><button class="btn g" style="color:var(--er)" onclick="del('${t.id}')">Delete ticket</button></div>`);
+  <div class="row" style="margin-top:10px"><button class="btn g" onclick="this.closest('.ov').remove()">Close</button>${isAdmin()?`<button class="btn g" style="color:var(--er)" onclick="del('${t.id}')">Delete ticket</button>`:''}</div>`);
   $('#cs').onclick=()=>act(id,{op:'comment',text:$('#cm').value,internal:$('#ci').checked})}
-async function del(id){if(!confirm('Delete ticket '+id+' permanently?'))return;try{await api('tickets/'+id,{op:'delete'});T=T.filter(x=>x.id!==id);document.querySelectorAll('.ov').forEach(x=>x.remove());if(view==='tickets')list();toast('Ticket deleted')}catch(e){toast(e.message)}}
-async function act(id,body){try{const t=await api('tickets/'+id,body);T=T.map(x=>x.id===id?t:x);show(id);if(view==='tickets')list()}catch(e){toast(e.message)}}
-function teamUI(){
-  $('#m').innerHTML=`<h3>Team members</h3><p class="mu">Team members don't log in — add their names here, then assign tickets to them.</p><div class="card">
-  ${TEAM.map(m=>`<div class="row" style="justify-content:space-between;padding:6px 0"><span>${esc(m)}</span><button class="btn g" onclick="tm('remove','${esc(m).replace(/'/g,'')}')">Remove</button></div>`).join('')||'<p class="mu">No team members yet.</p>'}
-  <div class="row" style="margin-top:10px"><input id="tn" placeholder="Name" style="flex:1;margin:0"><button class="btn" onclick="tm('add',$('#tn').value)">Add</button></div></div>`}
-async function tm(op,name){try{TEAM=await api('team/'+op,{name});teamUI()}catch(e){toast(e.message)}}
-let LG=[],lf='',lt='',lq='';
-async function logs(){LG=await api('logs');
-  $('#m').innerHTML=`<div class="bar nw"><h3 style="flex:1">Activity log</h3><button class="btn g" id="dl">Download CSV</button><button class="btn g" id="dx" style="color:var(--er)"></button></div>
-  <div class="bar nw"><label>From</label><input type="date" id="lf" value="${lf}" style="width:auto;margin:0"><label>To</label><input type="date" id="lt" value="${lt}" style="width:auto;margin:0"><input id="lq" placeholder="Search text…" value="${esc(lq)}" style="flex:1;min-width:120px;margin:0"><button class="btn g" id="lc">Clear</button></div><div class="card" id="lt2"></div>`;
-  ['lf','lt','lq'].forEach(k=>$('#'+k).oninput=e=>{({lf:v=>lf=v,lt:v=>lt=v,lq:v=>lq=v.toLowerCase()})[k](e.target.value);drawLogs()});
-  $('#lc').onclick=()=>{lf=lt=lq='';logs()};$('#dl').onclick=dlCsv;$('#dx').onclick=delLogs;drawLogs()}
-const lrange=()=>[lf?new Date(lf+'T00:00:00').getTime():0,lt?new Date(lt+'T23:59:59.999').getTime():Infinity];
-const lview=()=>{const[a,b]=lrange();return LG.filter(l=>l.at>=a&&l.at<=b&&(!lq||(l.ticket+l.by+l.action).toLowerCase().includes(lq)))};
-function drawLogs(){const L=lview();$('#dx').textContent=(lf||lt)?'Delete range ('+L.length+')':'Delete all logs';
-  $('#lt2').innerHTML=`<table><tr><th>When</th><th>Ticket</th><th>By</th><th>Action</th></tr>${L.map(l=>`<tr><td class="mu">${fmt(l.at)}</td><td>${esc(l.ticket)}</td><td>${esc(l.by)}</td><td>${esc(l.action)}</td></tr>`).join('')||'<tr><td colspan=4 class="mu">No matching activity.</td></tr>'}</table>`}
-function dlCsv(){const c=s=>'"'+String(s).replace(/"/g,'""')+'"',b=new Blob([[['Time','Ticket','By','Action'],...lview().map(l=>[new Date(l.at).toISOString(),l.ticket,l.by,l.action])].map(r=>r.map(c).join(',')).join('\n')],{type:'text/csv'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='activity-log.csv';a.click()}
-async function delLogs(){const[a,b]=lrange(),ranged=lf||lt;if(!confirm(ranged?'Permanently delete ALL log entries in this date range?':'Permanently delete ALL log entries?'))return;
-  try{const r=await api('logs/delete',ranged?{from:a,to:b===Infinity?0:b}:{});toast(r.deleted+' entries deleted');logs()}catch(e){toast(e.message)}}
-(async()=>{try{await api('me');await enter()}catch(e){home()}})();
+async function del(id){if(!confirm('Delete ticket '+id+' permanently?'))return;try{await api('tickets/'+id,{op:'delete'});T=T.filter(x=>x.id!==id);document.querySelectorAll('.ov').forEach(x=>x.remove());list();toast('Ticket deleted')}catch(e){toast(e.message)}}
+async function act(id,body){try{const t=await api('tickets/'+id,body);if(t.moved){T=T.filter(x=>x.id!==id);document.querySelectorAll('.ov').forEach(x=>x.remove());toast('Moved to another team');}else{T=T.map(x=>x.id===id?t:x);show(id)}list()}catch(e){toast(e.message)}}
+
+/* ---------- Admin: teams & logins ---------- */
+async function teamsUI(){
+  USERS=await api('users');
+  $('#m').innerHTML=`<div class="bar"><h3 style="flex:1">Teams</h3><input id="tn" placeholder="New team name"><button class="btn" id="ta">Add team</button></div>
+  <div class="card">${TEAMS.map(t=>`<div class="row" style="justify-content:space-between;padding:6px 0"><span>${esc(t.name)}</span><button class="btn g" onclick="tdel('${t.id}')">Delete</button></div>`).join('')||'<p class="mu">No teams yet — add one, then create logins for its members.</p>'}</div>
+  <div class="bar" style="margin-top:22px"><h3 style="flex:1">Team logins</h3><button class="btn" id="ua">+ Add login</button></div>
+  <div class="card"><table><tr><th>Name</th><th>Email</th><th>Team</th><th></th></tr>${USERS.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${esc(tname(u.team))}</td><td><button class="btn g" onclick='uform(${JSON.stringify(u).replace(/'/g,"&#39;")})'>Edit</button> <button class="btn g" onclick="udel('${esc(u.email)}')">Delete</button></td></tr>`).join('')||'<tr><td colspan=4 class="mu">No logins yet.</td></tr>'}</table></div>`;
+  $('#ta').onclick=async()=>{try{TEAMS=await api('teams/add',{name:$('#tn').value});teamsUI()}catch(e){toast(e.message)}};$('#ua').onclick=()=>uform({})}
+async function tdel(id){if(!confirm('Delete this team?'))return;try{TEAMS=await api('teams/delete',{id});teamsUI()}catch(e){toast(e.message)}}
+async function udel(email){if(!confirm('Delete login '+email+'?'))return;try{await api('users/delete',{email});teamsUI()}catch(e){toast(e.message)}}
+function uform(u){const o=modal(`<h3>${u.email?'Edit login':'Add login'}</h3>${F('Name','un','value="'+esc(u.name||'')+'"')}${F('Email','ue','type=email value="'+esc(u.email||'')+'" '+(u.email?'readonly':''))}
+  <label>Team</label>${sel('ut',TEAMS.map(t=>[t.id,t.name]),u.team||'','Choose team…')}${F(u.email?'New password (leave blank to keep)':'Password (8+ characters)','up','type=text autocomplete=off')}
+  <div class="row"><button class="btn" id="ug">Save</button><button class="btn g" onclick="this.closest('.ov').remove()">Cancel</button></div>`,1);
+  $('#ug').onclick=async()=>{try{await api('users/save',{name:$('#un').value,email:$('#ue').value,team:$('#ut').value,password:$('#up').value});o.remove();toast('Saved');teamsUI()}catch(e){toast(e.message)}}}
+
+/* ---------- Activity log ---------- */
+let LG=[],lf='',lt='',lq='',lnext=null;
+const lrange=()=>[lf?new Date(lf+'T00:00:00').getTime():0,lt?new Date(lt+'T23:59:59.999').getTime():Date.now()];
+const lurl=(b)=>{const[a,z]=lrange();return 'logs?from='+a+'&to='+z+(b?'&before='+b:'')};
+async function logs(){
+  $('#m').innerHTML=`<div class="bar nw"><h3 style="flex:1">Activity log</h3><button class="btn g" id="dl">Download CSV</button>${isAdmin()?'<button class="btn g" id="dx" style="color:var(--er)"></button>':''}</div>
+  <div class="bar nw"><label>From</label><input type="date" id="lf" value="${lf}" style="width:auto"><label>To</label><input type="date" id="lt" value="${lt}" style="width:auto"><input id="lq" placeholder="Search text…" value="${esc(lq)}" style="flex:1;min-width:120px"><button class="btn g" id="lc">Clear</button></div><div class="card" id="lt2"></div><div id="lm"></div>`;
+  $('#lf').onchange=e=>{lf=e.target.value;reload()};$('#lt').onchange=e=>{lt=e.target.value;reload()};$('#lq').oninput=e=>{lq=e.target.value.toLowerCase();drawLogs()};
+  $('#lc').onclick=()=>{lf=lt=lq='';logs()};$('#dl').onclick=dlCsv;if(isAdmin())$('#dx').onclick=delLogs;reload()}
+async function reload(){try{const r=await api(lurl());LG=r.logs;lnext=r.next;drawLogs()}catch(e){toast(e.message)}}
+async function loadMore(){try{const r=await api(lurl(lnext));LG=LG.concat(r.logs);lnext=r.next;drawLogs()}catch(e){toast(e.message)}}
+const lview=()=>LG.filter(l=>!lq||(l.ticket+l.by+l.action).toLowerCase().includes(lq));
+function drawLogs(){const L=lview();if(isAdmin())$('#dx').textContent=(lf||lt)?'Delete these days':'Delete all logs';
+  $('#lt2').innerHTML=`<table><tr><th>When</th><th>Ticket</th><th>By</th><th>Action</th></tr>${L.map(l=>`<tr><td class="mu">${fmt(l.at)}</td><td>${esc(l.ticket)}</td><td>${esc(l.by)}</td><td>${esc(l.action)}</td></tr>`).join('')||'<tr><td colspan=4 class="mu">No matching activity.</td></tr>'}</table>`;
+  $('#lm').innerHTML=lnext?'<p style="text-align:center"><button class="btn g" onclick="loadMore()">Load older entries</button></p>':`<p class="mu" style="text-align:center">${LG.length} entries</p>`}
+async function dlCsv(){try{let all=LG.slice(),n=lnext;while(n){const r=await api(lurl(n));all=all.concat(r.logs);n=r.next}
+  const rows=all.filter(l=>!lq||(l.ticket+l.by+l.action).toLowerCase().includes(lq)),c=s=>'"'+String(s).replace(/"/g,'""')+'"';
+  const b=new Blob([[['Time','Ticket','By','Team','Action'],...rows.map(l=>[new Date(l.at).toISOString(),l.ticket,l.by,tname(l.team),l.action])].map(r=>r.map(c).join(',')).join('\n')],{type:'text/csv'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='activity-log.csv';a.click()}catch(e){toast(e.message)}}
+async function delLogs(){const[a,z]=lrange(),r=lf||lt;if(!confirm(r?'Permanently delete ALL log entries on the selected days?':'Permanently delete ALL log entries?'))return;
+  try{const x=await api('logs/delete',{from:a,to:z});toast(x.deleted+' entries deleted');logs()}catch(e){toast(e.message)}}
+(async()=>{try{await enter()}catch(e){home()}})();
 </script></body></html>

@@ -1,11 +1,15 @@
-# Helpdesk (Netlify)
-- **Requesters**: no login. Public form → ticket ID; track with ticket ID.
-- **Team**: no login. Names added by admin, tickets assigned to them.
-- **Admin**: the only login. Manages everything, sees activity log / CSV.
+# Helpdesk (Netlify + Upstash Redis)
+- **Requesters**: no login. Public form (picks a team) → ticket ID; track with the ID.
+- **Team members**: separate logins per person, each belongs to one team; see only their team's tickets and logs.
+- **Admin**: one login (env vars). Creates teams and logins, sees everything, deletes tickets/logs.
 
 ## Deploy
-1. Create a free Redis DB at upstash.com → copy the **REST URL** and **REST Token**.
-2. Push this folder to GitHub → Netlify: Add new site → Import from Git (settings are read from netlify.toml).
-3. Site configuration → Environment variables:
-   `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `AUTH_SECRET` (long random), `ADMIN_EMAIL`, `ADMIN_PASSWORD`.
-4. Deploys → Trigger deploy. Open the site → "Admin login".
+1. upstash.com → create Redis DB → copy REST URL + REST Token.
+2. Push to GitHub → Netlify: Add new site → Import from Git.
+3. Netlify env vars: `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `AUTH_SECRET` (long random), `ADMIN_EMAIL`, `ADMIN_PASSWORD`.
+4. Deploy. Staff login → Teams & logins → add teams, then add a login per member.
+
+## Production checklist
+- Use a strong `AUTH_SECRET` and admin password; never commit them.
+- Add your custom domain in Netlify (HTTPS is automatic).
+- Export the Activity log CSV monthly as a backup; Upstash data is the only copy.
